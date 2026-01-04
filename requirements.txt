@@ -1,0 +1,7 @@
+websockets
+sounddevice
+numpy
+requests
+torch
+torchaudio
+torchvision
