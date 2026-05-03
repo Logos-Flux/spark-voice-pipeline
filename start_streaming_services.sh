@@ -4,8 +4,13 @@
 #
 # Usage:
 #   ./start_streaming_services.sh
+#
+# Defaults to loopback-only binding for safety. To expose services on the LAN,
+# set BIND_HOST=0.0.0.0 — services have NO built-in auth, see README Security.
 
 set -e
+
+BIND_HOST="${BIND_HOST:-127.0.0.1}"
 
 echo "=========================================="
 echo "  Starting Streaming Voice Chat Services"
@@ -26,7 +31,7 @@ echo "[1/3] Starting Whisper STT server (port 8025)..."
 cd ~/ggml-org/whisper.cpp/build-cuda/bin
 LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH nohup ./whisper-server \
     -m ~/ggml-org/whisper.cpp/models/ggml-large-v3-turbo-q8_0.bin \
-    --host 0.0.0.0 \
+    --host "$BIND_HOST" \
     --port 8025 \
     > ~/ggml-org/logs/whisper-server.log 2>&1 &
 echo "      PID: $!"
@@ -36,7 +41,7 @@ echo ""
 echo "[2/3] Starting VibeVoice Streaming TTS (port 8027)..."
 echo "      This takes ~30s to load the model..."
 cd ~/ggml-org
-nohup python3 vibevoice_streaming_server.py --port 8027 --voice en-Emma_woman \
+nohup python3 vibevoice_streaming_server.py --host "$BIND_HOST" --port 8027 --voice en-Emma_woman \
     > logs/vibevoice-streaming.log 2>&1 &
 echo "      PID: $!"
 
@@ -77,7 +82,7 @@ done
 echo ""
 echo "[3/3] Starting Voice Chat Orchestrator (port 8028)..."
 cd ~/ggml-org
-nohup python3 voice_chat_streaming.py --port 8028 \
+nohup python3 voice_chat_streaming.py --host "$BIND_HOST" --port 8028 \
     > logs/orchestrator.log 2>&1 &
 echo "      PID: $!"
 
@@ -100,7 +105,9 @@ echo "  VibeVoice TTS:    ws://localhost:8027/stream"
 echo "  Orchestrator:     ws://localhost:8028/voice"
 echo ""
 echo "Client usage (run on your laptop):"
-echo "  python voice_chat_client_streaming.py --spark-host 10.0.0.104"
+echo "  python voice_chat_client_streaming.py --spark-host <spark-host-or-ip>"
+echo ""
+echo "Bind address: $BIND_HOST  (set BIND_HOST=0.0.0.0 to expose on LAN — no auth, see README)"
 echo ""
 echo "Expected latency: ~800ms to first audio"
 echo ""

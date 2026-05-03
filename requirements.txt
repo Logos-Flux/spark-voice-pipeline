@@ -1,7 +1,14 @@
-websockets
-sounddevice
-numpy
-requests
+# Server-side (orchestrator + TTS server)
+fastapi
+uvicorn
+aiohttp
+starlette
+scipy
 torch
 torchaudio
 torchvision
+
+# Client-side
+websockets
+sounddevice
+numpy

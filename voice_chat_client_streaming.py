@@ -3,7 +3,7 @@
 Voice Chat Streaming Client - Smooth continuous audio playback.
 
 Usage:
-    python voice_chat_client_streaming.py --spark-host 10.0.0.104
+    python voice_chat_client_streaming.py --spark-host <spark-host-or-ip>
 
 Requirements:
     pip install sounddevice numpy websockets
@@ -13,7 +13,7 @@ import argparse
 import asyncio
 import io
 import json
-import queue
+import os
 import sys
 import threading
 import time
@@ -99,11 +99,11 @@ class StreamingPlayer:
                 self.buffer = self.buffer[bytes_needed:]
             elif len(self.buffer) > 0:
                 # Pad with what we have
-                data = self.buffer + b'\x00' * (bytes_needed - len(self.buffer))
+                data = self.buffer + b"\x00" * (bytes_needed - len(self.buffer))
                 self.buffer = b""
             else:
                 # No data - output silence
-                data = b'\x00' * bytes_needed
+                data = b"\x00" * bytes_needed
 
         outdata[:] = np.frombuffer(data, dtype=np.int16).reshape(-1, 1)
 
@@ -134,12 +134,13 @@ class VoiceClient:
 
         print("Speak now...")
 
-        with sd.InputStream(samplerate=SAMPLE_RATE_IN, channels=1,
-                           dtype=np.int16, blocksize=CHUNK_SIZE) as mic:
+        with sd.InputStream(
+            samplerate=SAMPLE_RATE_IN, channels=1, dtype=np.int16, blocksize=CHUNK_SIZE
+        ) as mic:
             while len(chunks) < max_chunks:
                 data, _ = mic.read(CHUNK_SIZE)
                 data = data.flatten()
-                energy = np.sqrt(np.mean(data.astype(float)**2))
+                energy = np.sqrt(np.mean(data.astype(float) ** 2))
                 is_speech = energy > SILENCE_THRESHOLD
 
                 if is_speech:
@@ -161,7 +162,7 @@ class VoiceClient:
 
         audio = np.concatenate(chunks)
         buf = io.BytesIO()
-        with wave.open(buf, 'wb') as w:
+        with wave.open(buf, "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
             w.setframerate(SAMPLE_RATE_IN)
@@ -224,10 +225,10 @@ class VoiceClient:
             return False
 
     async def run(self):
-        print("\n" + "="*45)
+        print("\n" + "=" * 45)
         print("  Streaming Voice Chat (Low Latency)")
         print("  Ctrl+C to exit")
-        print("="*45 + "\n")
+        print("=" * 45 + "\n")
 
         while True:
             try:
@@ -243,7 +244,11 @@ class VoiceClient:
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--spark-host", default="10.0.0.104")
+    parser.add_argument(
+        "--spark-host",
+        default=os.environ.get("SPARK_HOST", "localhost"),
+        help="Hostname or IP of the Spark server (env: SPARK_HOST)",
+    )
     parser.add_argument("--port", type=int, default=8028)
     args = parser.parse_args()
 

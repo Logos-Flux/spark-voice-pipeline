@@ -16,32 +16,33 @@ Usage:
 Client connects to: ws://spark:8028/voice
 """
 
-import asyncio
 import argparse
-import io
 import json
+import os
 import re
-import wave
 from typing import AsyncIterator, Optional
+from urllib.parse import urlencode
 
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-# Service endpoints
-WHISPER_URL = "http://localhost:8025/inference"
-OLLAMA_URL = "http://localhost:11434/api/chat"
-TTS_WS_URL = "ws://localhost:8027/stream"
+# Service endpoints (override via env vars for non-default topologies)
+WHISPER_URL = os.environ.get("WHISPER_URL", "http://localhost:8025/inference")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
+TTS_WS_URL = os.environ.get("TTS_WS_URL", "ws://localhost:8027/stream")
 
 # Configuration
-SAMPLE_RATE_IN = 16000   # Input audio sample rate
+SAMPLE_RATE_IN = 16000  # Input audio sample rate
 SAMPLE_RATE_OUT = 24000  # VibeVoice output sample rate
 LLM_MODEL = "llama3.2:3b"
-SYSTEM_PROMPT = "You are a helpful voice assistant. Keep responses concise - 1-2 sentences max."
+SYSTEM_PROMPT = (
+    "You are a helpful voice assistant. Keep responses concise - 1-2 sentences max."
+)
 
 # Sentence boundary pattern
-SENTENCE_END = re.compile(r'[.!?]\s*$')
+SENTENCE_END = re.compile(r"[.!?]\s*$")
 
 
 app = FastAPI(title="Voice Chat Streaming Orchestrator")
@@ -51,8 +52,10 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
     """Send audio to Whisper and get transcription."""
     async with aiohttp.ClientSession() as session:
         data = aiohttp.FormData()
-        data.add_field('file', audio_bytes, filename='audio.wav', content_type='audio/wav')
-        data.add_field('response_format', 'json')
+        data.add_field(
+            "file", audio_bytes, filename="audio.wav", content_type="audio/wav"
+        )
+        data.add_field("response_format", "json")
 
         async with session.post(WHISPER_URL, data=data, timeout=30) as resp:
             if resp.status != 200:
@@ -104,7 +107,9 @@ async def stream_llm_response(
                 messages[:] = messages[:1] + messages[-8:]
 
 
-async def stream_tts_audio(text: str, voice: str = None) -> AsyncIterator[bytes]:
+async def stream_tts_audio(
+    text: str, voice: Optional[str] = None
+) -> AsyncIterator[bytes]:
     """Stream audio chunks from VibeVoice TTS."""
     if not text.strip():
         return
@@ -114,7 +119,7 @@ async def stream_tts_audio(text: str, voice: str = None) -> AsyncIterator[bytes]
         if voice:
             params["voice"] = voice
 
-        url = f"{TTS_WS_URL}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
+        url = f"{TTS_WS_URL}?{urlencode(params)}"
 
         async with session.ws_connect(url) as ws:
             async for msg in ws:
@@ -207,6 +212,7 @@ async def voice_chat(ws: WebSocket):
                         continue
                     elif data.get("type") == "audio":
                         import base64
+
                         audio_bytes = base64.b64decode(data["data"])
                     else:
                         continue
@@ -221,13 +227,17 @@ async def voice_chat(ws: WebSocket):
             try:
                 transcription = await transcribe_audio(audio_bytes)
                 if not transcription:
-                    await ws.send_json({"type": "error", "message": "No speech detected"})
+                    await ws.send_json(
+                        {"type": "error", "message": "No speech detected"}
+                    )
                     continue
                 print(f"[orchestrator] Transcription: {transcription}")
                 await ws.send_json({"type": "transcription", "text": transcription})
             except Exception as e:
                 print(f"[orchestrator] Whisper error: {e}")
-                await ws.send_json({"type": "error", "message": f"Transcription failed: {e}"})
+                await ws.send_json(
+                    {"type": "error", "message": f"Transcription failed: {e}"}
+                )
                 continue
 
             # Step 2: Stream LLM response, buffer into sentences
@@ -270,11 +280,13 @@ async def voice_chat(ws: WebSocket):
                 continue
 
             # Signal completion
-            await ws.send_json({
-                "type": "complete",
-                "full_response": full_response,
-                "sentences": len(sentences),
-            })
+            await ws.send_json(
+                {
+                    "type": "complete",
+                    "full_response": full_response,
+                    "sentences": len(sentences),
+                }
+            )
             print(f"[orchestrator] Complete: {len(sentences)} sentences")
 
     except WebSocketDisconnect:
@@ -282,12 +294,13 @@ async def voice_chat(ws: WebSocket):
     except Exception as e:
         print(f"[orchestrator] Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         if ws.client_state == WebSocketState.CONNECTED:
             try:
                 await ws.close()
-            except:
+            except Exception:
                 pass
         print("[orchestrator] Session ended")
 
@@ -354,7 +367,11 @@ def main():
 
     parser = argparse.ArgumentParser(description="Voice Chat Streaming Orchestrator")
     parser.add_argument("--port", type=int, default=8028)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address. Use 0.0.0.0 to expose on the LAN (no built-in auth — see README).",
+    )
     parser.add_argument("--llm-model", default="llama3.2:3b")
     args = parser.parse_args()
 

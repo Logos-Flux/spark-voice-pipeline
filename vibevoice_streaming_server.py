@@ -16,12 +16,10 @@ Usage:
 import asyncio
 import argparse
 import copy
-import json
 import os
 import threading
 import traceback
 from pathlib import Path
-from queue import Empty, Queue
 from typing import Any, Dict, Iterator, Optional
 
 import numpy as np
@@ -80,20 +78,24 @@ class StreamingTTSService:
         print(f"[startup] Loading model with dtype={load_dtype}, attn={attn_impl}")
 
         try:
-            self.model = VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
-                self.model_path,
-                torch_dtype=load_dtype,
-                device_map=device_map,
-                attn_implementation=attn_impl,
+            self.model = (
+                VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
+                    self.model_path,
+                    torch_dtype=load_dtype,
+                    device_map=device_map,
+                    attn_implementation=attn_impl,
+                )
             )
         except Exception as e:
             if attn_impl == "flash_attention_2":
                 print(f"[startup] flash_attention_2 failed, using SDPA: {e}")
-                self.model = VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
-                    self.model_path,
-                    torch_dtype=load_dtype,
-                    device_map=device_map,
-                    attn_implementation="sdpa",
+                self.model = (
+                    VibeVoiceStreamingForConditionalGenerationInference.from_pretrained(
+                        self.model_path,
+                        torch_dtype=load_dtype,
+                        device_map=device_map,
+                        attn_implementation="sdpa",
+                    )
                 )
             else:
                 raise
@@ -144,8 +146,10 @@ class StreamingTTSService:
             return_tensors="pt",
             return_attention_mask=True,
         )
-        return {k: v.to(self._torch_device) if hasattr(v, "to") else v
-                for k, v in processed.items()}
+        return {
+            k: v.to(self._torch_device) if hasattr(v, "to") else v
+            for k, v in processed.items()
+        }
 
     def stream(
         self,
@@ -290,7 +294,9 @@ async def websocket_stream(ws: WebSocket):
                 voice = msg.get("voice", voice)
                 cfg = msg.get("cfg", cfg)
             except asyncio.TimeoutError:
-                await ws.send_json({"type": "error", "message": "Timeout waiting for text"})
+                await ws.send_json(
+                    {"type": "error", "message": "Timeout waiting for text"}
+                )
                 await ws.close()
                 return
             except Exception as e:
@@ -311,7 +317,9 @@ async def websocket_stream(ws: WebSocket):
         total_samples = 0
 
         try:
-            iterator = service.stream(text, voice_key=voice, cfg_scale=cfg, stop_event=stop_event)
+            iterator = service.stream(
+                text, voice_key=voice, cfg_scale=cfg, stop_event=stop_event
+            )
             sentinel = object()
 
             while ws.client_state == WebSocketState.CONNECTED:
@@ -336,7 +344,7 @@ async def websocket_stream(ws: WebSocket):
             traceback.print_exc()
             try:
                 await ws.send_json({"type": "error", "message": str(e)})
-            except:
+            except Exception:
                 pass
         finally:
             stop_event.set()
@@ -345,13 +353,15 @@ async def websocket_stream(ws: WebSocket):
 
             if ws.client_state == WebSocketState.CONNECTED:
                 try:
-                    await ws.send_json({
-                        "type": "complete",
-                        "chunks": chunk_count,
-                        "duration": duration,
-                    })
+                    await ws.send_json(
+                        {
+                            "type": "complete",
+                            "chunks": chunk_count,
+                            "duration": duration,
+                        }
+                    )
                     await ws.close()
-                except:
+                except Exception:
                     pass
 
 
@@ -384,13 +394,18 @@ async def synthesize_batch(request: dict):
     buf.seek(0)
 
     from fastapi.responses import Response
+
     return Response(content=buf.read(), media_type="audio/wav")
 
 
 def main():
     parser = argparse.ArgumentParser(description="VibeVoice Streaming TTS Server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address. Use 0.0.0.0 to expose on the LAN (no built-in auth — see README).",
+    )
     parser.add_argument("--voice", default="en-Emma_woman")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
