@@ -21,7 +21,9 @@ jobs:
       - name: Install lint tooling
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black
+          # Pinned: unpinned installs drift CI green/red independent of code
+          # changes (ruff 0.16.x flags BLE001/E001/etc. on this tree).
+          pip install "ruff==0.15.6" "black==26.5.0"
 
       - name: Run ruff
         run: ruff check .
